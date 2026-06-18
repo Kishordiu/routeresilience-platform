@@ -1094,3 +1094,497 @@ function IconSpark({ className = "" }: { className?: string }) {
     </svg>
   );
 }
+
+/* ============================================================== */
+/*  CITY DATA — uploaded GeoJSON                                   */
+/* ============================================================== */
+type LngLat = [number, number];
+type BBox = [number, number, number, number]; // [minLng, minLat, maxLng, maxLat]
+
+type BoundaryData = {
+  rings: LngLat[][];      // outer rings only (incl. multipolygon parts)
+  bbox: BBox;
+  areaKm2: number;
+};
+type RoadsData = {
+  lines: LngLat[][];
+  bbox: BBox;
+  count: number;
+  lengthKm: number;
+};
+
+type CityDataValue = {
+  boundary: BoundaryData | null;
+  roads: RoadsData | null;
+  sourceName: string | null;
+  setBoundary: (b: BoundaryData | null, name?: string) => void;
+  setRoads: (r: RoadsData | null, name?: string) => void;
+  reset: () => void;
+};
+
+const CityDataContext = createContext<CityDataValue | null>(null);
+
+function CityDataProvider({ children }: { children: React.ReactNode }) {
+  const [boundary, setBoundaryState] = useState<BoundaryData | null>(null);
+  const [roads, setRoadsState] = useState<RoadsData | null>(null);
+  const [sourceName, setSourceName] = useState<string | null>(null);
+  const setBoundary = useCallback((b: BoundaryData | null, name?: string) => {
+    setBoundaryState(b);
+    if (name) setSourceName(name);
+  }, []);
+  const setRoads = useCallback((r: RoadsData | null, name?: string) => {
+    setRoadsState(r);
+    if (name) setSourceName(name);
+  }, []);
+  const reset = useCallback(() => {
+    setBoundaryState(null); setRoadsState(null); setSourceName(null);
+  }, []);
+  const value = useMemo(
+    () => ({ boundary, roads, sourceName, setBoundary, setRoads, reset }),
+    [boundary, roads, sourceName, setBoundary, setRoads, reset]
+  );
+  return <CityDataContext.Provider value={value}>{children}</CityDataContext.Provider>;
+}
+
+function useCityData(): CityDataValue {
+  const v = useContext(CityDataContext);
+  if (!v) throw new Error("useCityData must be used inside CityDataProvider");
+  return v;
+}
+
+/* ---- GeoJSON parsing -------------------------------------------------- */
+function isLngLat(p: unknown): p is LngLat {
+  return Array.isArray(p) && p.length >= 2 && typeof p[0] === "number" && typeof p[1] === "number";
+}
+function extendBBox(b: BBox | null, p: LngLat): BBox {
+  if (!b) return [p[0], p[1], p[0], p[1]];
+  return [Math.min(b[0], p[0]), Math.min(b[1], p[1]), Math.max(b[2], p[0]), Math.max(b[3], p[1])];
+}
+export function mergeBBox(a?: BBox, b?: BBox): BBox | null {
+  if (!a && !b) return null;
+  if (!a) return b!;
+  if (!b) return a;
+  return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
+}
+function haversineKm(a: LngLat, b: LngLat): number {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b[1] - a[1]);
+  const dLng = toRad(b[0] - a[0]);
+  const lat1 = toRad(a[1]), lat2 = toRad(b[1]);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function ringAreaKm2(ring: LngLat[]): number {
+  // Spherical excess approximation, good enough for city-scale display
+  if (ring.length < 3) return 0;
+  const R = 6371;
+  let total = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [lng1, lat1] = ring[i];
+    const [lng2, lat2] = ring[(i + 1) % ring.length];
+    total += ((lng2 - lng1) * Math.PI / 180) *
+      (2 + Math.sin((lat1 * Math.PI) / 180) + Math.sin((lat2 * Math.PI) / 180));
+  }
+  return Math.abs((total * R * R) / 2);
+}
+
+type Geometry = { type: string; coordinates: unknown };
+function* iterFeatures(g: any): Generator<Geometry> {
+  if (!g || typeof g !== "object") return;
+  if (g.type === "FeatureCollection" && Array.isArray(g.features)) {
+    for (const f of g.features) if (f?.geometry) yield f.geometry as Geometry;
+  } else if (g.type === "Feature" && g.geometry) {
+    yield g.geometry as Geometry;
+  } else if (typeof g.type === "string" && "coordinates" in g) {
+    yield g as Geometry;
+  }
+}
+
+function parseBoundary(json: unknown): BoundaryData {
+  const rings: LngLat[][] = [];
+  let bbox: BBox | null = null;
+  for (const geom of iterFeatures(json)) {
+    if (geom.type === "Polygon") {
+      const polys = geom.coordinates as unknown[];
+      if (Array.isArray(polys) && polys.length) {
+        const outer = (polys[0] as unknown[]).filter(isLngLat) as LngLat[];
+        if (outer.length >= 3) { rings.push(outer); outer.forEach(p => (bbox = extendBBox(bbox, p))); }
+      }
+    } else if (geom.type === "MultiPolygon") {
+      const mps = geom.coordinates as unknown[];
+      for (const p of mps) {
+        const outer = ((p as unknown[])[0] as unknown[]).filter(isLngLat) as LngLat[];
+        if (outer.length >= 3) { rings.push(outer); outer.forEach(pt => (bbox = extendBBox(bbox, pt))); }
+      }
+    }
+  }
+  if (!rings.length || !bbox) throw new Error("No Polygon / MultiPolygon features found.");
+  const areaKm2 = rings.reduce((s, r) => s + ringAreaKm2(r), 0);
+  return { rings, bbox, areaKm2 };
+}
+
+function parseRoads(json: unknown): RoadsData {
+  const lines: LngLat[][] = [];
+  let bbox: BBox | null = null;
+  let lengthKm = 0;
+  for (const geom of iterFeatures(json)) {
+    if (geom.type === "LineString") {
+      const ls = (geom.coordinates as unknown[]).filter(isLngLat) as LngLat[];
+      if (ls.length >= 2) lines.push(ls);
+    } else if (geom.type === "MultiLineString") {
+      const mls = geom.coordinates as unknown[];
+      for (const part of mls) {
+        const ls = (part as unknown[]).filter(isLngLat) as LngLat[];
+        if (ls.length >= 2) lines.push(ls);
+      }
+    }
+  }
+  if (!lines.length) throw new Error("No LineString / MultiLineString features found.");
+  for (const ls of lines) {
+    for (const p of ls) bbox = extendBBox(bbox, p);
+    for (let i = 1; i < ls.length; i++) lengthKm += haversineKm(ls[i - 1], ls[i]);
+  }
+  return { lines, bbox: bbox!, count: lines.length, lengthKm };
+}
+
+/* ---- Projection ------------------------------------------------------- */
+type Projector = (p: LngLat) => [number, number];
+export function makeProjector(bbox: BBox, w: number, h: number, pad = 24): Projector {
+  const [minLng, minLat, maxLng, maxLat] = bbox;
+  // Equirectangular with mid-latitude width correction
+  const midLat = (minLat + maxLat) / 2;
+  const k = Math.cos((midLat * Math.PI) / 180);
+  const dx = Math.max(1e-6, (maxLng - minLng) * k);
+  const dy = Math.max(1e-6, maxLat - minLat);
+  const sx = (w - pad * 2) / dx;
+  const sy = (h - pad * 2) / dy;
+  const s = Math.min(sx, sy);
+  const offX = pad + ((w - pad * 2) - dx * s) / 2;
+  const offY = pad + ((h - pad * 2) - dy * s) / 2;
+  return ([lng, lat]) => [
+    offX + (lng - minLng) * k * s,
+    // invert Y so north is up
+    offY + (maxLat - lat) * s,
+  ];
+}
+export function ringToPath(ring: LngLat[], project: Projector): string {
+  let d = "";
+  for (let i = 0; i < ring.length; i++) {
+    const [x, y] = project(ring[i]);
+    d += (i === 0 ? "M" : "L") + x.toFixed(1) + "," + y.toFixed(1);
+  }
+  return d + "Z";
+}
+export function lineToPath(line: LngLat[], project: Projector): string {
+  let d = "";
+  for (let i = 0; i < line.length; i++) {
+    const [x, y] = project(line[i]);
+    d += (i === 0 ? "M" : "L") + x.toFixed(1) + "," + y.toFixed(1);
+  }
+  return d;
+}
+
+/* ============================================================== */
+/*  UPLOAD STUDIO                                                  */
+/* ============================================================== */
+function UploadStudio() {
+  const { boundary, roads, sourceName, setBoundary, setRoads, reset } = useCityData();
+
+  const loadDemo = useCallback(() => {
+    setBoundary(parseBoundary(DEMO_BOUNDARY), "Demo · Aurelia District");
+    setRoads(parseRoads(DEMO_ROADS), "Demo · Aurelia District");
+  }, [setBoundary, setRoads]);
+
+  return (
+    <section id="upload" className="relative py-28 px-4 bg-[color:var(--surface)]">
+      <div className="max-w-7xl mx-auto">
+        <SectionHead
+          eyebrow="Bring Your City"
+          title={<>Upload your <span className="text-gradient-teal">own geometry.</span></>}
+          sub="Drop a city-boundary polygon and a road-network LineString file (GeoJSON). The Digital Twin and Disaster Simulator will re-render against your data — instantly, in-browser, no upload to a server."
+        />
+
+        <div className="mt-12 grid lg:grid-cols-2 gap-5">
+          <Dropzone
+            kind="boundary"
+            title="City boundary"
+            hint="GeoJSON · Polygon or MultiPolygon · WGS84"
+            accept="Polygon / MultiPolygon"
+            loaded={!!boundary}
+            summary={boundary ? `${boundary.rings.length} ring${boundary.rings.length>1?"s":""} · ${boundary.areaKm2.toFixed(1)} km²` : undefined}
+            onParsed={(json, name) => setBoundary(parseBoundary(json), name)}
+            onClear={() => setBoundary(null)}
+          />
+          <Dropzone
+            kind="roads"
+            title="Road network"
+            hint="GeoJSON · LineString or MultiLineString · WGS84"
+            accept="LineString / MultiLineString"
+            loaded={!!roads}
+            summary={roads ? `${roads.count.toLocaleString()} edges · ${roads.lengthKm.toFixed(1)} km` : undefined}
+            onParsed={(json, name) => setRoads(parseRoads(json), name)}
+            onClear={() => setRoads(null)}
+          />
+        </div>
+
+        <div className="mt-5 glass-strong rounded-3xl p-5 flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-3">
+            <span className={`size-2 rounded-full ${(boundary||roads) ? "bg-primary animate-pulse-dot" : "bg-foreground/20"}`} />
+            <div className="text-sm">
+              <div className="font-medium">
+                {sourceName ?? (boundary || roads ? "Custom dataset" : "No dataset loaded")}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {boundary || roads
+                  ? "Digital Twin and Simulator are wired to your data."
+                  : "Drop GeoJSON above or load the demo dataset to see it propagate."}
+              </div>
+            </div>
+          </div>
+          <div className="ml-auto flex flex-wrap gap-2">
+            <button onClick={loadDemo}
+              className="text-sm font-medium px-4 py-2 rounded-xl glass">
+              Load demo dataset
+            </button>
+            <a href="#twin"
+              className="text-sm font-medium px-4 py-2 rounded-xl text-white shadow-glow"
+              style={{ background: "var(--gradient-teal-sky)" }}>
+              Open Digital Twin →
+            </a>
+            <button onClick={reset}
+              className="text-sm font-medium px-4 py-2 rounded-xl bg-white/60 border border-foreground/10 hover:bg-white">
+              Clear
+            </button>
+          </div>
+        </div>
+
+        {(boundary || roads) && <UploadPreview />}
+      </div>
+    </section>
+  );
+}
+
+function Dropzone({
+  kind, title, hint, accept, loaded, summary, onParsed, onClear,
+}: {
+  kind: "boundary" | "roads";
+  title: string;
+  hint: string;
+  accept: string;
+  loaded: boolean;
+  summary?: string;
+  onParsed: (json: unknown, name: string) => void;
+  onClear: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [over, setOver] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = useCallback(async (file: File) => {
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) {
+      setError("File exceeds 25 MB browser limit.");
+      return;
+    }
+    setBusy(true); setError(null);
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      onParsed(json, file.name.replace(/\.geo(json)?$/i, ""));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to parse GeoJSON.");
+    } finally {
+      setBusy(false);
+    }
+  }, [onParsed]);
+
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault(); setOver(false);
+        const f = e.dataTransfer.files?.[0];
+        if (f) handleFile(f);
+      }}
+      className={`glass-strong rounded-3xl p-6 transition-all ${over ? "shadow-glow ring-1 ring-[color:var(--primary)]" : ""}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="size-10 rounded-2xl flex items-center justify-center text-white"
+            style={{ background: "var(--gradient-teal-sky)" }}>
+            {kind === "boundary"
+              ? <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M5 7l7-4 7 4-7 4z"/><path d="M5 7v10l7 4 7-4V7"/></svg>
+              : <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 20c4 0 4-16 8-16s4 16 8 16"/></svg>}
+          </div>
+          <div>
+            <div className="font-semibold">{title}</div>
+            <div className="text-xs text-muted-foreground">{hint}</div>
+          </div>
+        </div>
+        {loaded && (
+          <span className="font-mono text-[10px] px-2 py-0.5 rounded-md"
+            style={{ color: "var(--primary)", background: "color-mix(in oklab, var(--primary) 14%, transparent)" }}>
+            LOADED
+          </span>
+        )}
+      </div>
+
+      <div className="mt-5 border border-dashed border-foreground/15 rounded-2xl p-6 text-center">
+        <div className="text-sm">
+          {busy ? "Parsing…" : (
+            <>
+              Drop your <span className="font-mono text-xs">{accept}</span> GeoJSON file,
+              or{" "}
+              <button
+                onClick={() => inputRef.current?.click()}
+                className="text-primary font-medium underline-offset-2 hover:underline"
+              >
+                browse
+              </button>
+              .
+            </>
+          )}
+        </div>
+        <div className="mt-1 text-[11px] text-muted-foreground font-mono">
+          .geojson · .json · up to 25 MB · parsed locally in your browser
+        </div>
+        <input
+          ref={inputRef} type="file" accept=".geojson,.json,application/geo+json,application/json"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
+        />
+      </div>
+
+      {error && (
+        <div className="mt-3 rounded-xl px-3 py-2 text-xs"
+          style={{ color: "var(--rose)", background: "color-mix(in oklab, var(--rose) 10%, transparent)" }}>
+          {error}
+        </div>
+      )}
+      {loaded && summary && !error && (
+        <div className="mt-3 flex items-center justify-between text-xs">
+          <span className="font-mono text-muted-foreground">{summary}</span>
+          <button onClick={onClear} className="text-muted-foreground hover:text-foreground">
+            Remove
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UploadPreview() {
+  const { boundary, roads } = useCityData();
+  const W = 600, H = 360;
+  const projected = useMemo(() => {
+    const bbox = mergeBBox(boundary?.bbox, roads?.bbox);
+    if (!bbox) return null;
+    const p = makeProjector(bbox, W, H, 20);
+    return {
+      boundary: boundary?.rings.map(r => ringToPath(r, p)) ?? [],
+      roads: roads?.lines.map(l => lineToPath(l, p)) ?? [],
+    };
+  }, [boundary, roads]);
+  if (!projected) return null;
+  return (
+    <div className="mt-5 grid lg:grid-cols-[1fr_320px] gap-5">
+      <div className="glass-strong rounded-3xl p-2">
+        <div className="relative rounded-3xl overflow-hidden"
+          style={{ background: "linear-gradient(160deg,#0b1220,#0f1d2e)" }}>
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block">
+            {projected.boundary.map((d, i) => (
+              <path key={`b-${i}`} d={d}
+                fill="rgba(20,184,166,0.07)" stroke="#14B8A6" strokeOpacity="0.7"
+                strokeWidth="1.5" strokeLinejoin="round" />
+            ))}
+            <g stroke="#0EA5E9" strokeWidth="0.9" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.85">
+              {projected.roads.map((d, i) => <path key={`r-${i}`} d={d} />)}
+            </g>
+          </svg>
+        </div>
+      </div>
+      <div className="glass-strong rounded-3xl p-5">
+        <div className="text-sm font-semibold">Dataset summary</div>
+        <ul className="mt-4 space-y-3 text-sm">
+          <li className="flex justify-between"><span className="text-muted-foreground">Boundary rings</span><span className="font-mono">{boundary?.rings.length ?? 0}</span></li>
+          <li className="flex justify-between"><span className="text-muted-foreground">Area</span><span className="font-mono">{boundary ? `${boundary.areaKm2.toFixed(1)} km²` : "—"}</span></li>
+          <li className="flex justify-between"><span className="text-muted-foreground">Road edges</span><span className="font-mono">{roads?.count.toLocaleString() ?? "—"}</span></li>
+          <li className="flex justify-between"><span className="text-muted-foreground">Total length</span><span className="font-mono">{roads ? `${roads.lengthKm.toFixed(1)} km` : "—"}</span></li>
+          <li className="flex justify-between"><span className="text-muted-foreground">BBox</span>
+            <span className="font-mono text-[10px] text-right">
+              {(() => {
+                const b = mergeBBox(boundary?.bbox, roads?.bbox);
+                return b ? `${b[0].toFixed(2)},${b[1].toFixed(2)} → ${b[2].toFixed(2)},${b[3].toFixed(2)}` : "—";
+              })()}
+            </span>
+          </li>
+        </ul>
+        <div className="mt-5 pt-4 border-t border-foreground/5 text-[11px] text-muted-foreground">
+          Geometries are projected with an equirectangular projection (mid-latitude width correction). Suitable for city-scale display.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================== */
+/*  DEMO DATASET                                                   */
+/* ============================================================== */
+const DEMO_BOUNDARY = {
+  type: "FeatureCollection",
+  features: [{
+    type: "Feature", properties: { name: "Aurelia District" },
+    geometry: {
+      type: "Polygon",
+      coordinates: [[
+        [28.92, 41.00], [28.98, 40.99], [29.05, 41.02], [29.07, 41.07],
+        [29.03, 41.11], [28.96, 41.12], [28.91, 41.09], [28.90, 41.04], [28.92, 41.00],
+      ]],
+    },
+  }],
+};
+const DEMO_ROADS = (() => {
+  // Build a deterministic grid + diagonals inside the demo bbox
+  let s = 7;
+  const r = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+  const features: unknown[] = [];
+  const lonA = 28.91, lonB = 29.07, latA = 40.99, latB = 41.12;
+  for (let i = 0; i < 9; i++) {
+    const t = i / 8;
+    const lat = latA + (latB - latA) * t;
+    features.push({ type: "Feature", properties: {}, geometry: {
+      type: "LineString",
+      coordinates: Array.from({ length: 6 }, (_, k) => {
+        const tt = k / 5;
+        return [lonA + (lonB - lonA) * tt, lat + (r() - 0.5) * 0.004];
+      }),
+    }});
+  }
+  for (let i = 0; i < 11; i++) {
+    const t = i / 10;
+    const lon = lonA + (lonB - lonA) * t;
+    features.push({ type: "Feature", properties: {}, geometry: {
+      type: "LineString",
+      coordinates: Array.from({ length: 6 }, (_, k) => {
+        const tt = k / 5;
+        return [lon + (r() - 0.5) * 0.004, latA + (latB - latA) * tt];
+      }),
+    }});
+  }
+  // diagonals
+  for (let i = 0; i < 4; i++) {
+    const off = (i - 1.5) * 0.02;
+    features.push({ type: "Feature", properties: {}, geometry: {
+      type: "LineString",
+      coordinates: Array.from({ length: 10 }, (_, k) => {
+        const tt = k / 9;
+        return [lonA + (lonB - lonA) * tt + off * Math.sin(tt * 3),
+                latA + (latB - latA) * tt + (r() - 0.5) * 0.003];
+      }),
+    }});
+  }
+  return { type: "FeatureCollection", features };
+})();
