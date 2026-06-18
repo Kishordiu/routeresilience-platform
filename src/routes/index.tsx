@@ -486,9 +486,22 @@ function FloatingChip({ className = "", label, value, tone }: {
 }
 
 function CityTwin({ active }: { active: boolean[] }) {
-  const [roads, flood, heat, crit] = active;
+  const [roadsOn, flood, heat, crit] = active;
+  const { boundary, roads } = useCityData();
+  const W = 800, H = 500;
+  const projected = useMemo(() => {
+    if (!boundary && !roads) return null;
+    const bbox = mergeBBox(boundary?.bbox, roads?.bbox);
+    if (!bbox) return null;
+    const project = makeProjector(bbox, W, H, 30);
+    return {
+      boundary: boundary ? boundary.rings.map(r => ringToPath(r, project)) : [],
+      roads: roads ? roads.lines.map(l => lineToPath(l, project)) : [],
+    };
+  }, [boundary, roads]);
+  const useUser = !!projected;
   return (
-    <svg viewBox="0 0 800 500" className="absolute inset-0 w-full h-full">
+    <svg viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 w-full h-full">
       <defs>
         <linearGradient id="heat" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#F59E0B" stopOpacity="0.5" />
@@ -500,8 +513,8 @@ function CityTwin({ active }: { active: boolean[] }) {
         </linearGradient>
       </defs>
 
-      {/* iso city blocks */}
-      <g opacity="0.7">
+      {/* iso city blocks — demo fallback */}
+      {!useUser && <g opacity="0.7">
         {Array.from({ length: 9 }).map((_, r) =>
           Array.from({ length: 14 }).map((_, c) => {
             const x = 60 + c * 50 + (r % 2) * 6;
@@ -516,7 +529,14 @@ function CityTwin({ active }: { active: boolean[] }) {
             );
           })
         )}
-      </g>
+      </g>}
+
+      {/* uploaded city boundary */}
+      {useUser && projected!.boundary.map((d, i) => (
+        <path key={`b-${i}`} d={d}
+          fill="rgba(20,184,166,0.06)" stroke="#14B8A6" strokeOpacity="0.55"
+          strokeWidth="1.5" strokeLinejoin="round" />
+      ))}
 
       {/* heatmap */}
       {heat && (
@@ -526,8 +546,17 @@ function CityTwin({ active }: { active: boolean[] }) {
         </g>
       )}
 
-      {/* roads */}
-      {roads && (
+      {/* roads — uploaded or demo */}
+      {roadsOn && useUser && (
+        <g stroke="#14B8A6" strokeWidth="1.1" fill="none" opacity="0.9"
+           strokeLinecap="round" strokeLinejoin="round">
+          {projected!.roads.map((d, i) => (
+            <path key={`r-${i}`} d={d}
+              opacity={0.55 + ((i * 37) % 45) / 100} />
+          ))}
+        </g>
+      )}
+      {roadsOn && !useUser && (
         <g stroke="#14B8A6" strokeWidth="2" fill="none" opacity="0.85" strokeLinecap="round">
           <path d="M0,250 Q200,200 400,260 T800,240" />
           <path d="M120,0 Q200,250 180,500" opacity="0.6" />
