@@ -779,7 +779,24 @@ const SCENARIO_DATA: Record<string, { affected: string; alt: string; crit: numbe
 function Simulator() {
   const [sel, setSel] = useState<string>("flood");
   const [intensity, setIntensity] = useState(62);
-  const d = SCENARIO_DATA[sel];
+  const { roads, sourceName } = useCityData();
+  const base = SCENARIO_DATA[sel];
+  const d = useMemo(() => {
+    if (!roads) return base;
+    const km = roads.lengthKm;
+    const sev = { flood: 0.32, quake: 0.78, slide: 0.12, bridge: 0.04 }[sel] ?? 0.3;
+    const affected = km * sev * (intensity / 100);
+    const alt = Math.max(4, Math.round(roads.count * sev * (intensity / 100) * 0.35));
+    const crit = Math.min(99, Math.round(40 + sev * 60 * (intensity / 100) + 15));
+    const popPerKm = { flood: 420, quake: 510, slide: 340, bridge: 11_800 }[sel] ?? 400;
+    const pop = affected * popPerKm;
+    return {
+      affected: `${affected.toFixed(affected < 10 ? 1 : 0)} km`,
+      alt: `${alt} routes`,
+      crit,
+      pop: pop >= 1000 ? `${(pop / 1000).toFixed(pop >= 10_000 ? 0 : 1)}k` : `${Math.round(pop)}`,
+    };
+  }, [roads, sel, intensity, base]);
 
   return (
     <section id="simulator" className="relative py-28 px-4 bg-[color:var(--surface-2)]">
@@ -834,6 +851,7 @@ function Simulator() {
             <div className="mt-5 pt-5 border-t border-foreground/5 space-y-2 font-mono text-[11px] text-muted-foreground">
               <div className="flex justify-between"><span>SEED</span><span>0x7F3A · 2026</span></div>
               <div className="flex justify-between"><span>MODEL</span><span>SFM-Hydro v3</span></div>
+              <div className="flex justify-between"><span>SOURCE</span><span>{roads ? sourceName ?? "user upload" : "demo tile"}</span></div>
               <div className="flex justify-between"><span>RUNTIME</span><span>842 ms</span></div>
             </div>
           </div>
