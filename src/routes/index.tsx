@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -15,17 +15,20 @@ export const Route = createFileRoute("/")({
 
 function Index() {
   return (
-    <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
-      <NavBar />
-      <Hero />
-      <Modules />
-      <DigitalTwin />
-      <Dashboard />
-      <Simulator />
-      <AIInsights />
-      <CTA />
-      <Footer />
-    </div>
+    <CityDataProvider>
+      <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
+        <NavBar />
+        <Hero />
+        <Modules />
+        <UploadStudio />
+        <DigitalTwin />
+        <Dashboard />
+        <Simulator />
+        <AIInsights />
+        <CTA />
+        <Footer />
+      </div>
+    </CityDataProvider>
   );
 }
 
