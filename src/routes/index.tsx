@@ -46,7 +46,7 @@ function NavBar() {
           </span>
         </a>
         <div className="hidden md:flex items-center gap-1 ml-2 text-sm">
-          {["Platform", "Modules", "Twin", "Dashboard", "Simulator"].map((l) => (
+          {["Modules", "Upload", "Twin", "Dashboard", "Simulator"].map((l) => (
             <a
               key={l}
               href={`#${l.toLowerCase()}`}
