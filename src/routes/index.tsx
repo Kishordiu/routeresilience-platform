@@ -376,6 +376,8 @@ function SectionHead({ eyebrow, title, sub }: { eyebrow: string; title: React.Re
 /*  DIGITAL TWIN                                                   */
 /* ============================================================== */
 function DigitalTwin() {
+  const { boundary, roads, sourceName } = useCityData();
+  const hasUserData = !!(boundary || roads);
   const layers = [
     { id: "roads", label: "Road network", on: true, color: "var(--primary)" },
     { id: "flood", label: "Flood simulation", on: true, color: "var(--sky)" },
@@ -403,9 +405,9 @@ function DigitalTwin() {
 
               {/* corner HUD */}
               <div className="absolute top-4 left-4 font-mono text-[10px] text-white/70 space-y-1">
-                <div>LAT 41.0082 · LON 28.9784</div>
-                <div>TILE 32 / 47 · z 14</div>
-                <div className="text-primary">● TWIN SYNCED</div>
+                <div>{hasUserData ? `SOURCE · ${sourceName ?? "user data"}` : "LAT 41.0082 · LON 28.9784"}</div>
+                <div>{hasUserData ? `EDGES ${roads?.count ?? 0} · ${(roads?.lengthKm ?? 0).toFixed(1)} km` : "TILE 32 / 47 · z 14"}</div>
+                <div className="text-primary">● TWIN {hasUserData ? "LIVE FROM UPLOAD" : "SYNCED"}</div>
               </div>
               <div className="absolute bottom-4 right-4 glass-strong rounded-xl px-3 py-2 text-[11px]">
                 <div className="flex items-center gap-3 font-mono">
@@ -426,7 +428,9 @@ function DigitalTwin() {
           <aside className="glass-strong rounded-3xl p-5 self-start">
             <div className="flex items-center justify-between">
               <h4 className="font-semibold">Layers</h4>
-              <span className="font-mono text-[10px] text-muted-foreground">4 / 12</span>
+              <span className="font-mono text-[10px] text-muted-foreground">
+                {hasUserData ? "USER DATA" : "DEMO TILE"}
+              </span>
             </div>
             <ul className="mt-4 space-y-2">
               {layers.map((l, i) => (
