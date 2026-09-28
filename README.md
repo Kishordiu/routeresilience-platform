@@ -1,41 +1,40 @@
-# Route Resilience Platform
+# ROUTE RESILIENCE
 
-> **A resilient routing and infrastructure monitoring prototype.**
+![Cinematic hero](https://capsule-render.vercel.app/api?type=rect&color=0:070707,100:171717&height=230&text=ROUTE%20RESILIENCE&fontColor=F3F3EE&fontSize=40&fontAlignY=38&desc=ROUTING%20%2F%20INFRASTRUCTURE&descColor=999991&descSize=12&descAlignY=66&animation=blinking)
 
-Route Resilience Platform is part of K. Kishor Kumar's public engineering portfolio, exploring practical product ideas through modern web development and iterative prototyping.
+> **ROUTING / INFRASTRUCTURE.**
 
-## Highlights
+## THE PREMISE
 
-- Responsive product-oriented interface
-- Modular implementation designed for iteration
-- Clear separation between prototype concepts and production claims
-- Built as an independent engineering experiment
+Route Resilience Platform turns routing into an observable system: routes, failure states and recovery thinking belong in the same operational picture.
 
-## Stack
+## THE EXPERIENCE
+
+**A route must survive failure.**  
+**Fallbacks should be visible.**  
+**Operational tooling should explain state.**
+
+## THE SYSTEM
+
+A responsive React/TypeScript dashboard foundation designed to grow into routing telemetry, health checks and resilience policies.
+
+## THE STACK
 
 React · TypeScript · Vite · Tailwind CSS
 
-## Run locally
+## RUN
 
-~~~bash
+```bash
 npm install
 npm run dev
-~~~
+```
 
-For a production build:
+## PROJECT STATE
 
-~~~bash
-npm run build
-~~~
+**Infrastructure resilience prototype**
 
-## Status
-
-**Infrastructure / resilience prototype**
-
-## Author
-
-**K. Kishor Kumar** · [GitHub @Kishordiu](https://github.com/Kishordiu)
+Implemented behaviour is documented separately from future integrations so the project story stays honest as the product evolves.
 
 ---
 
-<p align="center">Built with curiosity, iteration and engineering discipline.</p>
+<p align="center"><strong>K. KISHOR KUMAR</strong><br><sub>ENGINEERING / PRODUCT / SYSTEMS</sub></p>
