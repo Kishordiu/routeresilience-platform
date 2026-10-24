@@ -1,5 +1,7 @@
 ![ROUTE RESILIENCE — bespoke brushed-metal project artwork](./assets/readme-metal-hero.svg)
 
+# ROUTE RESILIENCE
+
 > **ROUTING / INFRASTRUCTURE.**
 
 ## THE PREMISE
