@@ -2,54 +2,57 @@
 
 # ROUTE RESILIENCE
 
-> **ROUTING / INFRASTRUCTURE.**
+**An interactive geospatial product concept for exploring road-network resilience, incident planning, and route disruption scenarios.**
 
-## THE PREMISE
+Route Resilience packages several planning ideas into a single interface: module overview, data upload, a digital-twin-style view, dashboard metrics, scenario simulation, and insight panels. The main experience is composed in the browser using a React context and interactive UI components. A landing-page simulation is not a validated live road network, official emergency-routing service, or operational city digital twin.
 
-Route Resilience Platform turns routing into an observable system: routes, failure states and recovery thinking belong in the same operational picture.
+## The resilience loop
 
-## THE EXPERIENCE
+```text
+Network / scenario inputs
+        │
+        ▼
+Represent the network and operating context
+        │
+        ▼
+Explore a disruption scenario
+        │
+        ▼
+Compare the displayed route / system state
+        │
+        ▼
+Review illustrative insights
+```
 
-**A route must survive failure.**  
-**Fallbacks should be visible.**  
-**Operational tooling should explain state.**
+## Interface modules
 
-## THE SYSTEM
+- **Upload studio:** A place to introduce data into the concept workflow.
+- **Digital-twin view:** A visual surface for describing a network model.
+- **Dashboard:** A summary-oriented view of the currently represented scenario.
+- **Simulator:** An interactive place to explore changes and consequences.
+- **Insights:** A presentation layer for scenario observations.
 
-A responsive React/TypeScript dashboard foundation designed to grow into routing telemetry, health checks and resilience policies.
+## Stack
 
-## THE STACK
+React · TypeScript · Vite · TanStack Router / Start · React Query · Recharts · Tailwind CSS
 
-React · TypeScript · Vite · Tailwind CSS
+## Run locally
 
-## RUN
-
-**Requirements:** Node.js 20+ and Bun.
+**Requirements:** Node.js and Bun (recommended).
 
 ```bash
+git clone https://github.com/Kishordiu/routeresilience-platform.git
+cd routeresilience-platform
 bun install
 bun run dev
 ```
 
-For a production bundle and local preview:
+Use the local URL printed by Vite.
 
-```bash
-bun run build
-bun run preview
-```
+## Model and safety boundary
 
-Run static checks with:
-
-```bash
-bun run lint
-```
-
-## PROJECT STATE
-
-**Infrastructure resilience prototype**
-
-Implemented behaviour is documented separately from future integrations so the project story stays honest as the product evolves.
+Unless a real routing engine, authoritative road data, validated disruption model, and tested integrations are connected, treat route outcomes and metrics as illustrative. Do not use the prototype for emergency dispatch, evacuation, or operational traffic decisions. Those use cases require verified data, explicit model assumptions, independent validation, and an accountable operator process.
 
 ---
 
-<p align="center"><strong>K. KISHOR KUMAR</strong><br><sub>ENGINEERING / PRODUCT / SYSTEMS</sub></p>
+<p align="center"><sub>DIU FOUNDRY · MOBILITY SYSTEMS / SCENARIO DESIGN</sub></p>
