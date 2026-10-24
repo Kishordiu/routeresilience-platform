@@ -1,6 +1,4 @@
-# ROUTE RESILIENCE
-
-![Cinematic hero](https://capsule-render.vercel.app/api?type=rect&color=0:070707,100:171717&height=230&text=ROUTE%20RESILIENCE&fontColor=F3F3EE&fontSize=40&fontAlignY=38&desc=ROUTING%20%2F%20INFRASTRUCTURE&descColor=999991&descSize=12&descAlignY=66&animation=blinking)
+![ROUTE RESILIENCE — bespoke brushed-metal project artwork](./assets/readme-metal-hero.svg)
 
 > **ROUTING / INFRASTRUCTURE.**
 
